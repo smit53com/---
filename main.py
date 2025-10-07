@@ -677,7 +677,7 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
             today_str = local_now.strftime("%Y-%m-%d")
             
             # Проверяем: 9:00-9:59 и не отправляли сегодня
-            if local_now.hour == 9:
+            if True:
                 last_sent = profile.get('last_daily_sent')
                 if last_sent == today_str:
                     continue  # Уже отправляли сегодня
@@ -783,4 +783,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("👋 Бот остановлен пользователем")
     except Exception as e:
+
         logger.error(f"💥 Критическая ошибка: {e}", exc_info=True)

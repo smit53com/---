@@ -676,8 +676,8 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
             local_now = now_utc.astimezone(user_tz)
             today_str = local_now.strftime("%Y-%m-%d")
             
-            # Проверяем: 9:00-9:59 и не отправляли сегодня
-            if True:  # ВРЕМЕННЫЙ ТЕСТ
+            # Проверяем: 8:00-8:59 и не отправляли сегодня
+            if 8 <= local_now.hour < 9:  # Проверяем: 8:00-8:59 по местному времени
                 last_sent = profile.get('last_daily_sent')
                 if last_sent == today_str:
                     continue  # Уже отправляли сегодня
@@ -695,7 +695,7 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
                 
                 # Генерация прогноза
                 text = gpt_analyze(
-                    "Дай краткий астрологический прогноз на сегодня (3-4 абзаца).", 
+                    "Дай краткий астрологический прогноз на сегодня (3-4 абзаца). ВАЖНО: НЕ указывай конкретную дату в тексте, используй только слово 'Сегодня' без даты. Прогноз сделай температурой 80.", 
                     profile, 
                     current_data
                 )

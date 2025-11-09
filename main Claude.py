@@ -357,9 +357,28 @@ def gpt_analyze(question: str, profile: Dict[str, Any], current_data: Dict[str, 
     status = profile.get("status")
 
     summary_aspects = "; ".join([f"{a['p1']}-{a['p2']} {a['aspect']} ({a['angle']}°)" 
-                                  for a in aspects[:10]])  # Ограничиваем для краткости
+                                  for a in aspects[:10]])
 
-    prompt = f"""Ты — профессиональный астролог. Данные пользователя:
+    # Получаем текущую дату
+    now_tz = pytz.timezone(profile.get("now_tz", "UTC"))
+    today = dt.datetime.now(now_tz)
+    today_str = today.strftime("%d.%m.%Y (%A)")  # Например: 09.11.2025 (Saturday)
+    
+    # Русские названия дней недели
+    days_ru = {
+        'Monday': 'понедельник', 'Tuesday': 'вторник', 'Wednesday': 'среда',
+        'Thursday': 'четверг', 'Friday': 'пятница', 'Saturday': 'суббота', 'Sunday': 'воскресенье'
+    }
+    day_name = today.strftime("%A")
+    day_name_ru = days_ru.get(day_name, day_name)
+    current_date_formatted = f"{today.strftime('%d.%m.%Y')} ({day_name_ru})"
+
+    prompt = f"""Ты — профессиональный астролог. 
+
+ТЕКУЩАЯ ДАТА: {current_date_formatted}
+ВАЖНО: Сегодня именно {current_date_formatted}. Не используй другие даты!
+
+Данные пользователя:
 
 Пол: {gender}
 Семейное положение: {status}

@@ -678,13 +678,16 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     await update.message.reply_text(help_text)
 
-# --------- Ежедневная рассылка (улучшенная) ---------
-async def daily_job(context: ContextTypes.DEFAULT_TYPE):
+# --------- Ежедневная рассылка (исправленная) ---------
+async def daily_job(app):
     """Отправка ежедневных прогнозов."""
-    logger.info("🔄 Запуск проверки ежедневных рассылок...")
+    logger.info("🔄 Запуск ежедневной рассылки...")
     now_utc = dt.datetime.now(pytz.UTC)
     users = get_all_users()
     
+    logger.info(f"📊 Найдено пользователей для проверки: {len(users)}")
+    
+    sent_count = 0
     for profile in users:
         try:
             uid = profile['user_id']
@@ -695,11 +698,17 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
             local_now = now_utc.astimezone(user_tz)
             today_str = local_now.strftime("%Y-%m-%d")
             
-            # Проверяем: 9:00-9:59 и не отправляли сегодня
-            if 8 <= local_now.hour < 9:
+            logger.info(f"👤 Пользователь {uid}: локальное время {local_now.strftime('%H:%M')}, часовой пояс {tz_name}")
+            
+            # ИСПРАВЛЕНО: проверяем 9:00-9:59
+            if 9 <= local_now.hour < 10:
                 last_sent = profile.get('last_daily_sent')
+                
                 if last_sent == today_str:
-                    continue  # Уже отправляли сегодня
+                    logger.info(f"⏭️ Пользователь {uid}: уже получил прогноз сегодня ({last_sent})")
+                    continue
+                
+                logger.info(f"📤 Отправка прогноза пользователю {uid}...")
                 
                 # Расчет транзитов
                 current_positions = calc_positions(now_utc)
@@ -714,13 +723,13 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
                 
                 # Генерация прогноза
                 text = gpt_analyze(
-                    "Дай краткий астрологический прогноз на сегодня (3-4 абзаца) с температурой 0,8. ВАЖНО: НЕ указывай конкретную дату в тексте, используй только слово 'Сегодня' без даты.", 
+                    "Дай краткий астрологический прогноз на сегодня (3-4 абзаца). ВАЖНО: НЕ указывай конкретную дату в тексте, используй только слово 'Сегодня'.", 
                     profile, 
                     current_data
                 )
                 
                 # Отправка
-                await context.bot.send_message(
+                await app.bot.send_message(
                     chat_id=uid,
                     text=f"🌞 Прогноз на {local_now.strftime('%d.%m.%Y')}:\n\n{text}",
                     reply_markup=kb_topics()
@@ -728,22 +737,17 @@ async def daily_job(context: ContextTypes.DEFAULT_TYPE):
                 
                 # Обновляем дату последней отправки
                 update_last_daily_sent(uid, today_str)
+                sent_count += 1
                 logger.info(f"✅ Прогноз отправлен пользователю {uid}")
+            else:
+                logger.debug(f"⏰ Пользователь {uid}: не время для отправки (сейчас {local_now.hour}:00)")
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка отправки прогноза {profile.get('user_id')}: {e}")
-
-# --------- Обработка ошибок ---------
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Глобальный обработчик ошибок."""
-    logger.error(f"Ошибка обработки обновления: {context.error}", exc_info=context.error)
+            logger.error(f"❌ Ошибка отправки прогноза пользователю {profile.get('user_id')}: {e}", exc_info=True)
     
-    if update and update.effective_message:
-        await update.effective_message.reply_text(
-            "⚠ Произошла ошибка. Попробуйте позже или используйте /help"
-        )
+    logger.info(f"✅ Рассылка завершена. Отправлено: {sent_count} из {len(users)}")
 
-# ----------------- MAIN -----------------
+# ----------------- MAIN (исправленный) -----------------
 def main():
     """Запуск бота."""
     logger.info("🚀 Инициализация бота...")
@@ -781,16 +785,20 @@ def main():
     
     # Планировщик для ежедневных прогнозов
     scheduler = AsyncIOScheduler(timezone="UTC")
-    # Проверяем каждый час с 8:00 до 10:00 UTC (покрывает 9:00 во всех часовых поясах)
-    for hour in range(8, 11):
+    
+    # ИСПРАВЛЕНО: проверяем каждые 15 минут с 6:00 до 12:00 UTC
+    # Это покрывает 9:00 во всех часовых поясах (от UTC-3 до UTC+12)
+    for hour in range(6, 13):
         scheduler.add_job(
             daily_job,
             CronTrigger(hour=hour, minute="0,15,30,45", timezone="UTC"),
-            args=[app]
+            args=[app],
+            id=f"daily_job_{hour}",
+            replace_existing=True
         )
     
     scheduler.start()
-    logger.info("⏰ Планировщик запущен")
+    logger.info("⏰ Планировщик запущен (проверка с 6:00 до 12:00 UTC каждые 15 минут)")
     
     # Запуск polling
     logger.info("✅ Бот запущен и готов к работе!")

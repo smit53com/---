@@ -102,7 +102,6 @@ def load_profile(user_id: int) -> Optional[Dict[str, Any]]:
         row = conn.execute("SELECT profile FROM users WHERE user_id = ?", (user_id,)).fetchone()
         if row:
             profile = json.loads(row['profile'])
-            # Восстановление datetime объектов
             if 'birth_time_utc' in profile:
                 profile['birth_time_utc'] = dt.datetime.fromisoformat(profile['birth_time_utc'])
             return profile
@@ -151,19 +150,14 @@ def kb_topics() -> InlineKeyboardMarkup:
 
 # ----------------- Парсинг ввода -----------------
 def try_parse_input(text: str) -> Tuple[dt.datetime, str]:
-    """
-    Парсит ввод: дата, время, место.
-    Поддерживает: 'ДД.ММ.ГГГГ ЧЧ:ММ Город, Страна' или 'YYYY-MM-DD HH:MM Город, Страна'.
-    """
+    """Парсит ввод: дата, время, место."""
     text = text.strip()
-    # Формат ДД.ММ.ГГГГ
     m = re.match(r"^(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})\s+(.+)$", text)
     if m:
         date_str, time_str, place = m.groups()
         naive = dt.datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
         return naive, place.strip()
 
-    # Формат YYYY-MM-DD
     m2 = re.match(r"^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+(.+)$", text)
     if m2:
         date_str, time_str, place = m2.groups()
@@ -295,12 +289,10 @@ def draw_chart(positions: Dict[str, float], houses: List[float],
     ax.set_xticks([math.radians(i*30) for i in range(12)])
     ax.set_xticklabels(zodiac_labels, fontsize=11)
 
-    # Линии домов
     for cusp in houses:
         rel_theta = math.radians((cusp - asc + 360) % 360)
         ax.plot([rel_theta, rel_theta], [0.0, 1.0], linewidth=1, alpha=0.4, color="#888888")
 
-    # Планеты с улучшенным размещением
     planet_points = {}
     sector_planets = {i: [] for i in range(12)}
     
@@ -315,7 +307,6 @@ def draw_chart(positions: Dict[str, float], houses: List[float],
         sector_list = sector_planets[sector]
         idx = sector_list.index(name)
         
-        # Улучшенное смещение для избежания наложений
         if len(sector_list) > 1:
             offset = (idx - len(sector_list)/2) * 0.08
         else:
@@ -328,7 +319,6 @@ def draw_chart(positions: Dict[str, float], houses: List[float],
         ax.text(theta, r + 0.05, name, fontsize=9, ha='center', 
                 va='center', color=PLANET_COLORS.get(name, "#ffffff"), weight='bold')
 
-    # Аспекты
     for a in aspects:
         p1, p2 = a["p1"], a["p2"]
         if p1 in planet_points and p2 in planet_points:
@@ -359,12 +349,9 @@ def gpt_analyze(question: str, profile: Dict[str, Any], current_data: Dict[str, 
     summary_aspects = "; ".join([f"{a['p1']}-{a['p2']} {a['aspect']} ({a['angle']}°)" 
                                   for a in aspects[:10]])
 
-    # Получаем текущую дату
     now_tz = pytz.timezone(profile.get("now_tz", "UTC"))
     today = dt.datetime.now(now_tz)
-    today_str = today.strftime("%d.%m.%Y (%A)")  # Например: 09.11.2025 (Saturday)
     
-    # Русские названия дней недели
     days_ru = {
         'Monday': 'понедельник', 'Tuesday': 'вторник', 'Wednesday': 'среда',
         'Thursday': 'четверг', 'Friday': 'пятница', 'Saturday': 'суббота', 'Sunday': 'воскресенье'
@@ -379,7 +366,6 @@ def gpt_analyze(question: str, profile: Dict[str, Any], current_data: Dict[str, 
 ВАЖНО: Сегодня именно {current_date_formatted}. Не используй другие даты!
 
 Данные пользователя:
-
 Пол: {gender}
 Семейное положение: {status}
 Место рождения: {birth_place} ({birth_tz})
@@ -415,7 +401,7 @@ def gpt_analyze(question: str, profile: Dict[str, Any], current_data: Dict[str, 
         return resp.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"Ошибка GPT: {e}")
-        raise  # Retry сработает
+        raise
 
 # ----------------- Диалоговые хендлеры -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -457,9 +443,7 @@ async def get_birth_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "birth_tz": birth_tz,
         })
 
-        await update.message.reply_text(
-            "📍 Укажите текущее место (Город, Страна):"
-        )
+        await update.message.reply_text("📍 Укажите текущее место (Город, Страна):")
         return CURRENT_PLACE
     except Exception as e:
         await update.message.reply_text(
@@ -500,7 +484,6 @@ async def finalize_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = update.message.text.strip()
     context.user_data["status"] = status
 
-    # Расчёты
     b_utc = context.user_data["birth_time_utc"]
     blat, blon = context.user_data["birth_lat"], context.user_data["birth_lon"]
 
@@ -520,7 +503,6 @@ async def finalize_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.message.from_user.id
         save_profile(user_id, dict(context.user_data))
 
-        # Визуализация
         img = draw_chart(positions, houses, aspects, asc)
 
         intro = (
@@ -533,7 +515,6 @@ async def finalize_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_photo(photo=img, caption=intro, reply_markup=kb_topics())
 
-        # Полный анализ
         profile = load_profile(user_id)
         full_text = gpt_analyze("Дай полный анализ натальной карты.", profile)
         await update.message.reply_text(full_text, reply_markup=kb_topics())
@@ -568,7 +549,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🚫 Рассылка отключена. Включить: /start")
         return
 
-    # Тематические вопросы
     THEME_MAP = {
         "career": "Карьера и профессиональная реализация",
         "love": "Любовь и отношения",
@@ -599,7 +579,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --------- Свободные вопросы ---------
 async def free_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка текстовых вопросов."""
-    # Проверяем, что не в процессе настройки
     if context.user_data.get('in_conversation'):
         return
         
@@ -616,7 +595,6 @@ async def free_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.message.text.strip()
     await update.message.reply_text("⏳ Думаю...")
     
-    # Проверка на прогнозные запросы
     current_data = None
     if any(word in q.lower() for word in ["прогноз", "сегодня", "сейчас", "транзит"]):
         try:
@@ -678,7 +656,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     await update.message.reply_text(help_text)
 
-# --------- Ежедневная рассылка (исправленная) ---------
+# --------- Ежедневная рассылка ---------
 async def daily_job(app):
     """Отправка ежедневных прогнозов."""
     logger.info("🔄 Запуск ежедневной рассылки...")
@@ -693,7 +671,6 @@ async def daily_job(app):
             uid = profile['user_id']
             tz_name = profile.get("now_tz", "UTC")
             
-            # Конвертируем в локальное время пользователя
             user_tz = pytz.timezone(tz_name)
             local_now = now_utc.astimezone(user_tz)
             today_str = local_now.strftime("%Y-%m-%d")
@@ -710,7 +687,6 @@ async def daily_job(app):
                 
                 logger.info(f"📤 Отправка прогноза пользователю {uid}...")
                 
-                # Расчет транзитов
                 current_positions = calc_positions(now_utc)
                 transit_aspects = calc_transit_aspects(current_positions, profile["positions"])
                 current_houses, _ = calc_houses(now_utc, profile["now_lat"], profile["now_lon"])
@@ -721,21 +697,18 @@ async def daily_job(app):
                     "current_houses": current_houses,
                 }
                 
-                # Генерация прогноза
                 text = gpt_analyze(
                     "Дай краткий астрологический прогноз на сегодня (3-4 абзаца). ВАЖНО: НЕ указывай конкретную дату в тексте, используй только слово 'Сегодня'.", 
                     profile, 
                     current_data
                 )
                 
-                # Отправка
                 await app.bot.send_message(
                     chat_id=uid,
                     text=f"🌞 Прогноз на {local_now.strftime('%d.%m.%Y')}:\n\n{text}",
                     reply_markup=kb_topics()
                 )
                 
-                # Обновляем дату последней отправки
                 update_last_daily_sent(uid, today_str)
                 sent_count += 1
                 logger.info(f"✅ Прогноз отправлен пользователю {uid}")
@@ -747,18 +720,25 @@ async def daily_job(app):
     
     logger.info(f"✅ Рассылка завершена. Отправлено: {sent_count} из {len(users)}")
 
-# ----------------- MAIN (исправленный) -----------------
+# --------- Обработка ошибок ---------
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Глобальный обработчик ошибок."""
+    logger.error(f"Ошибка обработки обновления: {context.error}", exc_info=context.error)
+    
+    if update and update.effective_message:
+        await update.effective_message.reply_text(
+            "⚠ Произошла ошибка. Попробуйте позже или используйте /help"
+        )
+
+# ----------------- MAIN -----------------
 def main():
     """Запуск бота."""
     logger.info("🚀 Инициализация бота...")
     
-    # Инициализация БД
     init_db()
     
-    # Создание приложения
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Conversation handler
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -772,7 +752,6 @@ def main():
         per_chat=True,
     )
     
-    # Добавление обработчиков
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(CommandHandler("change", cmd_change))
@@ -780,14 +759,11 @@ def main():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, free_question))
     
-    # Обработчик ошибок
     app.add_error_handler(error_handler)
     
-    # Планировщик для ежедневных прогнозов
     scheduler = AsyncIOScheduler(timezone="UTC")
     
-    # ИСПРАВЛЕНО: проверяем каждые 15 минут с 6:00 до 12:00 UTC
-    # Это покрывает 9:00 во всех часовых поясах (от UTC-3 до UTC+12)
+    # Проверяем каждые 15 минут с 6:00 до 12:00 UTC
     for hour in range(6, 13):
         scheduler.add_job(
             daily_job,
@@ -800,7 +776,6 @@ def main():
     scheduler.start()
     logger.info("⏰ Планировщик запущен (проверка с 6:00 до 12:00 UTC каждые 15 минут)")
     
-    # Запуск polling
     logger.info("✅ Бот запущен и готов к работе!")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
